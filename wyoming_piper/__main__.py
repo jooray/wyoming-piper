@@ -194,9 +194,14 @@ async def main() -> None:
 
     process_manager = PiperProcessManager(args, voices_info)
 
-    # Make sure default voice is loaded.
-    # Other voices will be loaded on-demand.
-    await process_manager.get_process()
+    # Make sure default voice exists and is downloadable
+    from .download import ensure_voice_exists
+    ensure_voice_exists(
+        args.voice,
+        args.data_dir,
+        args.download_dir,
+        voices_info,
+    )
 
     # Start server
     server = AsyncServer.from_uri(args.uri)

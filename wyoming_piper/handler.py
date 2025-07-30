@@ -130,52 +130,21 @@ class PiperEventHandler(AsyncEventHandler):
             if not has_punctuation:
                 text = text + self.cli_args.auto_punctuation[0]
 
-        async with self.process_manager.processes_lock:
-            _LOGGER.debug("synthesize: raw_text=%s, text='%s'", raw_text, text)
-            voice_name: Optional[str] = None
-            voice_speaker: Optional[str] = None
-            if synthesize.voice is not None:
-                voice_name = synthesize.voice.name
-                voice_speaker = synthesize.voice.speaker
+        _LOGGER.debug("synthesize: raw_text=%s, text='%s'", raw_text, text)
+        voice_name: Optional[str] = None
+        voice_speaker: Optional[str] = None
+        if synthesize.voice is not None:
+            voice_name = synthesize.voice.name
+            voice_speaker = synthesize.voice.speaker
 
-            piper_proc = await self.process_manager.get_process(voice_name=voice_name)
+        # Use new text-as-parameter approach
+        output_path = await self.process_manager.synthesize_text(
+            text=text,
+            voice_name=voice_name,
+            voice_speaker=voice_speaker
+        )
 
-            assert piper_proc.proc.stdin is not None
-            assert piper_proc.proc.stdout is not None
-
-            # JSON in, file path out
-            input_obj: Dict[str, Any] = {"text": text}
-            if voice_speaker is not None:
-                speaker_id = piper_proc.get_speaker_id(voice_speaker)
-                if speaker_id is not None:
-                    input_obj["speaker_id"] = speaker_id
-                else:
-                    _LOGGER.warning(
-                        "No speaker '%s' for voice '%s'", voice_speaker, voice_name
-                    )
-
-            _LOGGER.debug("input: %s", input_obj)
-            piper_proc.proc.stdin.write(
-                (json.dumps(input_obj, ensure_ascii=False) + "\n").encode()
-            )
-            await piper_proc.proc.stdin.drain()
-
-            stdout_line = await piper_proc.proc.stdout.readline()
-            output_path = stdout_line.decode().strip()
-
-            # Parse the "INFO:__main__:Wrote /path/to/file.wav" format from stderr from OHF piper-tts
-            if not output_path:
-                stderr_line = await piper_proc.proc.stderr.readline()
-                stderr_text = stderr_line.decode().strip()
-                _LOGGER.debug("Piper stderr: %s", stderr_text)
-                
-                if "Wrote " in stderr_text:
-                    output_path = stderr_text.split("Wrote ")[1].strip()
-                else:
-                    _LOGGER.error("Piper failed to generate audio file. Stdout: '%s', Stderr: '%s'", 
-                                stdout_line.decode().strip(), stderr_text)
-
-            _LOGGER.debug("Piper output path: %s", output_path)
+        _LOGGER.debug("Piper output path: %s", output_path)
 
         wav_file: wave.Wave_read = wave.open(output_path, "rb")
         with wav_file:
